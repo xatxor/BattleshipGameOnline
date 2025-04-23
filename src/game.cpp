@@ -1,6 +1,7 @@
 #include "game.h"
 #include <iostream>
 #include <limits>
+#include <sstream>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -23,12 +24,19 @@ void clearScreen() {
     #endif
 }
 
-Game::Game() : player1(nullptr), player2(nullptr), player1Turn(true) {}
+Game::Game(bool isNetworkGame, std::shared_ptr<Lobby> lobby) 
+    : player1(nullptr), player2(nullptr), player1Turn(true), 
+      isNetworkGame(isNetworkGame), lobby(lobby) {}
 
 void Game::start() {
     std::cout << "Welcome to Battleship!\n\n";
     setupPlayers();
-    gameLoop();
+    
+    if (isNetworkGame) {
+        networkGameLoop();
+    } else {
+        gameLoop();
+    }
 }
 
 void Game::setupPlayers() {
@@ -37,39 +45,55 @@ void Game::setupPlayers() {
     std::cin >> name;
     player1 = new Player(name);
     
-    std::cout << "Enter second player's name (or 'AI' to play against computer): ";
-    std::cin >> name;
-    player2 = new Player(name);
-    
-    // Ship placement for player 1
-    std::cout << "\n" << player1->getName() << ", ship placement:\n";
-    char choice;
-    do {
-        std::cout << "Auto-place ships? (y/n): ";
-        std::cin >> choice;
-    } while (choice != 'y' && choice != 'n');
-    
-    if (choice == 'y') {
-        player1->autoPlaceShips();
-    } else {
-        manualPlacement(*player1);
-    }
-    
-    // Ship placement for player 2
-    if (player2->getName() == "AI") {
-        player2->autoPlaceShips();
-        std::cout << "\nComputer ships placed automatically.\n";
-    } else {
-        std::cout << "\n" << player2->getName() << ", ship placement:\n";
+    if (isNetworkGame) {
+        player2 = new Player("Opponent");
+        std::cout << "\n" << player1->getName() << ", ship placement:\n";
+        char choice;
         do {
             std::cout << "Auto-place ships? (y/n): ";
             std::cin >> choice;
         } while (choice != 'y' && choice != 'n');
         
         if (choice == 'y') {
-            player2->autoPlaceShips();
+            player1->autoPlaceShips();
         } else {
-            manualPlacement(*player2);
+            manualPlacement(*player1);
+        }
+    } else {
+        std::cout << "Enter second player's name (or 'AI' to play against computer): ";
+        std::cin >> name;
+        player2 = new Player(name);
+        
+        // Ship placement for player 1
+        std::cout << "\n" << player1->getName() << ", ship placement:\n";
+        char choice;
+        do {
+            std::cout << "Auto-place ships? (y/n): ";
+            std::cin >> choice;
+        } while (choice != 'y' && choice != 'n');
+        
+        if (choice == 'y') {
+            player1->autoPlaceShips();
+        } else {
+            manualPlacement(*player1);
+        }
+        
+        // Ship placement for player 2
+        if (player2->getName() == "AI") {
+            player2->autoPlaceShips();
+            std::cout << "\nComputer ships placed automatically.\n";
+        } else {
+            std::cout << "\n" << player2->getName() << ", ship placement:\n";
+            do {
+                std::cout << "Auto-place ships? (y/n): ";
+                std::cin >> choice;
+            } while (choice != 'y' && choice != 'n');
+            
+            if (choice == 'y') {
+                player2->autoPlaceShips();
+            } else {
+                manualPlacement(*player2);
+            }
         }
     }
 }
@@ -158,18 +182,55 @@ void Game::gameLoop() {
     }
 }
 
+void Game::networkGameLoop() {
+    // Determine who goes first (host goes first)
+    player1Turn = (lobby->getState() == Lobby::LobbyState::Hosting);
+    
+    while (true) {
+        clearScreen();
+        printBoards();
+        
+        if (player1Turn) {
+            // Our turn to attack
+            Player& currentPlayer = *player1;
+            Player& opponent = *player2;
+            
+            std::cout << "\nYour turn to attack!\n";
+            
+            bool hit = processNetworkAttack(currentPlayer, opponent);
+            
+            if (opponent.isDefeated()) {
+                clearScreen();
+                printBoards();
+                std::cout << "\nYou win!\n";
+                lobby->sendMessage("WIN");
+                break;
+            }
+            
+            if (!hit) {
+                player1Turn = !player1Turn;
+                lobby->sendMessage("MISS");
+                std::cout << "\nMiss! Waiting for opponent's turn...\n";
+                waitForOpponentAttack();
+            } else {
+                lobby->sendMessage("HIT");
+                std::cout << "\nHit! You get another turn.\n";
+                std::cin.get();
+                std::cin.get();
+            }
+        } else {
+            // Opponent's turn to attack
+            std::cout << "\nWaiting for opponent's attack...\n";
+            waitForOpponentAttack();
+        }
+    }
+}
+
 void Game::printBoards() const {
     std::cout << "Your board:\n";
-    if (player1Turn){
-        player1->printBoard(true);
-        std::cout << "\nEnemy board:\n";
-        player2->printBoard(false);
-    }
-    else{
-        player2->printBoard(true);
-        std::cout << "\nEnemy board:\n";
-        player1->printBoard(false);
-    }
+    player1->printBoard(true);
+    std::cout << "\nEnemy board:\n";
+    player2->printBoard(false);
 }
 
 bool Game::processAttack(Player& attacker, Player& defender) {
@@ -183,7 +244,6 @@ bool Game::processAttack(Player& attacker, Player& defender) {
               << static_cast<char>('A' + x) << y + 1 << " - "
               << (hit ? "HIT!" : "miss.") << "\n";
     
-    // Проверяем, был ли потоплен корабль
     if (hit) {
         const Ship* ship = defender.getShipAtPoint(x, y);
         if (ship && ship->isSunk()) {
@@ -192,6 +252,88 @@ bool Game::processAttack(Player& attacker, Player& defender) {
     }
     
     return hit;
+}
+
+bool Game::processNetworkAttack(Player& attacker, Player& defender) {
+    auto coords = getAttackCoordinates();
+    int x = coords.first;
+    int y = coords.second;
+    
+    sendAttackToOpponent(x, y);
+    bool hit = defender.attack(x, y);
+    
+    std::cout << "\nYou attack " 
+              << static_cast<char>('A' + x) << y + 1 << " - "
+              << (hit ? "HIT!" : "miss.") << "\n";
+    
+    if (hit) {
+        const Ship* ship = defender.getShipAtPoint(x, y);
+        if (ship && ship->isSunk()) {
+            std::cout << "You sunk a " << ship->getSize() << "-deck ship!\n";
+        }
+    }
+    
+    return hit;
+}
+
+void Game::sendAttackToOpponent(int x, int y) {
+    std::ostringstream oss;
+    oss << "ATTACK " << x << " " << y;
+    lobby->sendMessage(oss.str());
+}
+
+void Game::waitForOpponentAttack() {
+    while (true) {
+        if (lobby->hasMessages()) {
+            std::string msg = lobby->popMessage();
+            
+            if (msg.find("ATTACK") == 0) {
+                // Parse attack coordinates
+                std::istringstream iss(msg);
+                std::string cmd;
+                int x, y;
+                iss >> cmd >> x >> y;
+                
+                Player& currentPlayer = *player1;
+                Player& opponent = *player2;
+                
+                bool hit = currentPlayer.attack(x, y);
+                
+                clearScreen();
+                printBoards();
+                std::cout << "\nOpponent attacks " 
+                          << static_cast<char>('A' + x) << y + 1 << " - "
+                          << (hit ? "HIT!" : "miss.") << "\n";
+                
+                if (hit) {
+                    const Ship* ship = currentPlayer.getShipAtPoint(x, y);
+                    if (ship && ship->isSunk()) {
+                        std::cout << "Your " << ship->getSize() << "-deck ship was sunk!\n";
+                    }
+                }
+                
+                if (currentPlayer.isDefeated()) {
+                    std::cout << "\nYou lost! Opponent wins.\n";
+                    exit(0);
+                }
+                
+                if (msg.find("MISS") == 0) {
+                    player1Turn = !player1Turn;
+                }
+                
+                std::cin.get();
+                std::cin.get();
+                return;
+            }
+            else if (msg == "WIN") {
+                clearScreen();
+                printBoards();
+                std::cout << "\nYou lost! Opponent wins.\n";
+                exit(0);
+            }
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
 }
 
 std::pair<int, int> Game::getAttackCoordinates() const {

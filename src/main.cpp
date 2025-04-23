@@ -3,6 +3,7 @@
 #include <iostream>
 #include <thread>
 #include <chrono>
+#include <memory>
 
 void playLocalGame() {
     Game game;
@@ -10,7 +11,7 @@ void playLocalGame() {
 }
 
 void playNetworkGame() {
-    Lobby lobby;
+    auto lobby = std::make_shared<Lobby>();
     int choice;
     
     std::cout << "1. Host game\n";
@@ -23,16 +24,16 @@ void playNetworkGame() {
         std::cout << "Enter port to listen on: ";
         std::cin >> port;
         
-        if (!lobby.hostGame(port)) {
+        if (!lobby->hostGame(port)) {
             std::cout << "Failed to host game\n";
             return;
         }
         
-        std::cout << "Waiting for connection... Your info: " << lobby.getLocalInfo() << "\n";
+        std::cout << "Waiting for connection... Your info: " << lobby->getLocalInfo() << "\n";
         
-        while (lobby.getState() != Lobby::LobbyState::Connected) {
+        while (lobby->getState() != Lobby::LobbyState::Connected) {
             std::this_thread::sleep_for(std::chrono::seconds(1));
-            if (lobby.getState() == Lobby::LobbyState::ErrorState) {
+            if (lobby->getState() == Lobby::LobbyState::ErrorState) {
                 std::cout << "Error occurred while waiting for connection\n";
                 return;
             }
@@ -46,16 +47,16 @@ void playNetworkGame() {
         std::cout << "Enter host port: ";
         std::cin >> port;
         
-        if (!lobby.joinGame(ip, port)) {
+        if (!lobby->joinGame(ip, port)) {
             std::cout << "Failed to connect to host\n";
             return;
         }
         
         std::cout << "Connecting...\n";
         
-        while (lobby.getState() == Lobby::LobbyState::Joining) {
+        while (lobby->getState() == Lobby::LobbyState::Joining) {
             std::this_thread::sleep_for(std::chrono::seconds(1));
-            if (lobby.getState() == Lobby::LobbyState::ErrorState) {
+            if (lobby->getState() == Lobby::LobbyState::ErrorState) {
                 std::cout << "Error occurred while connecting\n";
                 return;
             }
@@ -65,15 +66,10 @@ void playNetworkGame() {
         return;
     }
     
-    std::cout << "Connected to peer: " << lobby.getPeerInfo() << "\n";
+    std::cout << "Connected to peer: " << lobby->getPeerInfo() << "\n";
     std::cout << "Starting game...\n";
     
-    // Здесь нужно добавить логику для сетевой игры
-    // Например, синхронизацию ходов и состояний досок
-    // Это потребует дополнительной модификации класса Game
-    
-    // Временно просто запускаем локальную игру
-    Game game;
+    Game game(true, lobby);
     game.start();
 }
 
