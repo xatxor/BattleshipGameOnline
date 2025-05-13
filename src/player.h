@@ -17,6 +17,7 @@ public:
     bool isValidPlacement(const Ship& newShip) const;
     void autoPlaceShips();
     const Ship* getShipAtPoint(int x, int y) const;
+    const std::vector<Ship>& getShips() const;  // Добавленный метод
 
 private:
     std::string name;

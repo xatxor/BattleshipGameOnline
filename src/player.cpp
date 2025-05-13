@@ -4,6 +4,9 @@
 #include <algorithm>
 
 Player::Player(const std::string& name) : name(name) {}
+const std::vector<Ship>& Player::getShips() const {
+    return ships;
+}
 
 const std::string& Player::getName() const {
     return name;

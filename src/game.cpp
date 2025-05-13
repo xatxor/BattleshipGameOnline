@@ -56,9 +56,15 @@ void Game::setupPlayers() {
         
         if (choice == 'y') {
             player1->autoPlaceShips();
+            sendShipPlacement(*player1);
         } else {
             manualPlacement(*player1);
+            sendShipPlacement(*player1);
         }
+        
+        // Wait for opponent's ships
+        std::cout << "\nWaiting for opponent to place ships...\n";
+        receiveShipPlacement(*player2);
     } else {
         std::cout << "Enter second player's name (or 'AI' to play against computer): ";
         std::cin >> name;
@@ -95,6 +101,42 @@ void Game::setupPlayers() {
                 manualPlacement(*player2);
             }
         }
+    }
+}
+
+void Game::sendShipPlacement(const Player& player) {
+    // Send ship placement to opponent
+    std::ostringstream oss;
+    for (const auto& ship : player.getShips()) {
+        auto pos = ship.getPosition();
+        oss << "SHIP " << ship.getSize() << " " 
+            << pos.first << " " << pos.second << " "
+            << (ship.getDirection() == Ship::HORIZONTAL ? "H" : "V") << ";";
+    }
+    lobby->sendMessage(oss.str());
+}
+
+void Game::receiveShipPlacement(Player& player) {
+    while (true) {
+        if (lobby->hasMessages()) {
+            std::string msg = lobby->popMessage();
+            if (msg.find("SHIP") == 0) {
+                std::istringstream iss(msg);
+                std::string cmd;
+                while (iss >> cmd) {
+                    if (cmd == "SHIP") {
+                        int size, x, y;
+                        std::string dirStr;
+                        iss >> size >> x >> y >> dirStr;
+                        Ship::Direction dir = (dirStr == "H") ? Ship::HORIZONTAL : Ship::VERTICAL;
+                        Ship ship(size, x, y, dir);
+                        player.addShip(ship);
+                    }
+                }
+                break;
+            }
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
 }
 

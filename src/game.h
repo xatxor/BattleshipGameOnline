@@ -28,6 +28,7 @@ private:
     std::pair<int, int> getAttackCoordinates() const;
     void sendAttackToOpponent(int x, int y);
     void waitForOpponentAttack();
+    
 };
 
 #endif
