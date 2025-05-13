@@ -28,6 +28,10 @@ private:
     std::pair<int, int> getAttackCoordinates() const;
     void sendAttackToOpponent(int x, int y);
     void waitForOpponentAttack();
+    void sendShipPlacement(const Player& player);
+    void receiveShipPlacement(Player& player);
+    void sendAttackResult(bool hit, bool sunk, int shipSize = 0);
+    void processIncomingNetworkData();
     
 };
 
