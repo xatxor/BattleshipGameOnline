@@ -37,7 +37,7 @@ void Game::setupPlayers() {
     std::cin >> name;
     player1 = new Player(name);
     
-    std::cout << "Enter second player's name (or 'AI' to play against computer): ";
+    std::cout << "Enter second player's name: ";
     std::cin >> name;
     player2 = new Player(name);
     
